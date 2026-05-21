@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PGVector Product Search
 
-## Getting Started
+A Next.js app demonstrating semantic search with **pgvector** and **OpenAI embeddings**.
 
-First, run the development server:
+## What it does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Stores laptop and mobile product data in **Vercel Postgres** with `pgvector`
+- Each product gets a **1536-dimension embedding** via OpenAI `text-embedding-ada-002`
+- Search queries are embedded and matched using **cosine similarity** (`<=>` operator)
+- Filter by category (laptops / mobiles / all) and max price
+
+## Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router) |
+| Database | Vercel Postgres + pgvector |
+| Embeddings | OpenAI text-embedding-ada-002 |
+| Styling | Tailwind CSS v4 |
+
+## Setup
+
+### 1. Create a Vercel Postgres database
+
+Go to Vercel Dashboard → Storage → Create Database → Postgres.
+Copy the env vars and paste into `.env.local`.
+
+### 2. Add your OpenAI API key to `.env.local`
+
+```
+OPENAI_API_KEY=sk-...
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Run locally
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Initialize the database
 
-## Learn More
+Visit `http://localhost:3000/admin`:
+1. **Run Setup** — creates `products` table with `vector(1536)` column + IVFFlat index
+2. **Seed Data** — inserts 26 products with embeddings (~1–2 min)
 
-To learn more about Next.js, take a look at the following resources:
+### 5. Search
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Visit `http://localhost:3000`. Try:
+- "thin laptop for developers"
+- "camera phone with good battery"
+- "gaming laptop with RTX"
+- "budget smartphone under 30000"
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy to Vercel
 
-## Deploy on Vercel
+```bash
+vercel deploy
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Add env vars in Vercel project settings (same as `.env.local`).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## How the pgvector query works
+
+```sql
+SELECT *, 1 - (embedding <=> '[...1536 floats...]'::vector) AS similarity
+FROM products
+WHERE category = 'laptop'
+  AND price <= 100000
+  AND embedding IS NOT NULL
+ORDER BY embedding <=> '[...1536 floats...]'::vector
+LIMIT 20;
+```
+
+`<=>` = cosine distance. `1 - distance = similarity` (higher = better match).
+The IVFFlat index makes nearest-neighbor lookup fast at scale.
