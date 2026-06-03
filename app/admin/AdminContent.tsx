@@ -3,7 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 
-export default function AdminPage() {
+interface AdminContentProps {
+  orgSlug: string;
+  userEmail: string;
+}
+
+export default function AdminContent({ orgSlug, userEmail }: AdminContentProps) {
   const [setupStatus, setSetupStatus] = useState("");
   const [seedStatus, setSeedStatus] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
@@ -52,15 +57,17 @@ export default function AdminPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">⚙️ Admin Setup</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Initialize database and seed product data
+              {orgSlug} &middot; {userEmail}
             </p>
           </div>
-          <Link
-            href="/"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            ← Back to Search
-          </Link>
+          <div className="flex gap-4 items-center">
+            <Link href="/settings" className="text-sm text-gray-500 hover:underline">
+              Settings
+            </Link>
+            <Link href="/" className="text-sm text-blue-600 hover:underline">
+              ← Back to Search
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -69,10 +76,9 @@ export default function AdminPage() {
         <div className="bg-white rounded-xl border shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-1">Step 1 — Setup Database</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Enables the <code className="bg-gray-100 px-1 rounded">pgvector</code> extension and creates the{" "}
-            <code className="bg-gray-100 px-1 rounded">products</code> table with a{" "}
-            <code className="bg-gray-100 px-1 rounded">vector(768)</code> column + IVFFlat index.
-            If the table exists with the old 1536-dim schema, it is migrated automatically.
+            Creates the <code className="bg-gray-100 px-1 rounded">organizations</code> and{" "}
+            <code className="bg-gray-100 px-1 rounded">products</code> tables with pgvector extension
+            and IVFFlat indices.
           </p>
           <button
             onClick={handleSetup}
@@ -92,12 +98,11 @@ export default function AdminPage() {
         <div className="bg-white rounded-xl border shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-1">Step 2 — Seed Products</h2>
           <p className="text-sm text-gray-600 mb-1">
-            Inserts <strong>12 laptops</strong> and <strong>14 mobiles</strong> using Ollama{" "}
-            <code className="bg-gray-100 px-1 rounded">nomic-embed-text</code> embeddings (768-dim),
-            with HuggingFace as fallback if Ollama is unavailable.
+            Inserts <strong>12 laptops</strong> and <strong>14 mobiles</strong> for org{" "}
+            <strong>{orgSlug}</strong> with Ollama + CLAP embeddings.
           </p>
           <p className="text-xs text-amber-600 mb-4">
-            ⚠️ Requires Ollama running locally (<code>OLLAMA_URL</code>) or <code>HF_API_TOKEN</code> set. Takes ~1–2 minutes.
+            ⚠️ Takes ~1–2 minutes. Existing products for this org will be replaced.
           </p>
           <button
             onClick={handleSeed}
@@ -115,23 +120,25 @@ export default function AdminPage() {
 
         {/* Schema reference */}
         <div className="bg-gray-900 rounded-xl p-5 text-sm text-gray-300 font-mono">
-          <p className="text-gray-500 mb-2 font-sans text-xs">Schema reference</p>
-          <pre>{`CREATE EXTENSION IF NOT EXISTS vector;
+          <p className="text-gray-500 mb-2 font-sans text-xs">Multi-tenant schema</p>
+          <pre>{`CREATE TABLE organizations (
+  id          UUID PRIMARY KEY,
+  slug        TEXT UNIQUE,
+  name        TEXT,
+  plan        TEXT DEFAULT 'free'
+);
 
 CREATE TABLE products (
   id          SERIAL PRIMARY KEY,
-  name        TEXT NOT NULL,
-  category    TEXT CHECK (category IN ('laptop','mobile')),
-  brand       TEXT NOT NULL,
-  price       NUMERIC NOT NULL,
-  description TEXT NOT NULL,
+  org_id      TEXT,            -- org scope
+  name        TEXT,
+  category    TEXT,
+  brand       TEXT,
+  price       NUMERIC,
   specs       JSONB,
-  embedding   vector(768)    -- Ollama nomic-embed-text / HF all-mpnet-base-v2
-);
-
-CREATE INDEX ON products
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);`}</pre>
+  embedding   vector(768),     -- Ollama text
+  clap_embedding vector(512)   -- CLAP audio
+);`}</pre>
         </div>
       </div>
     </main>

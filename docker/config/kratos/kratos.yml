@@ -1,0 +1,127 @@
+version: v1.3.1
+
+dsn: memory # overridden by DSN env var at runtime
+
+serve:
+  public:
+    base_url: http://localhost:4433/
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+        - http://localhost:4455
+        - https://*.yourapp.com
+        - https://yourapp.com
+      allowed_methods: [POST, GET, PUT, PATCH, DELETE]
+      allowed_headers: [Authorization, Cookie, Content-Type, X-Session-Token]
+      exposed_headers: [Content-Type, Set-Cookie]
+  admin:
+    base_url: http://kratos:4434/
+
+selfservice:
+  default_browser_return_url: http://localhost:3000/
+  allowed_return_urls:
+    - http://localhost:3000
+    - http://localhost:4455
+    - https://yourapp.com
+    - https://*.yourapp.com
+
+  methods:
+    password:
+      enabled: true
+      config:
+        haveibeenpwned_enabled: false # enable in production
+        min_password_length: 12
+        identifier_similarity_check_enabled: true
+    link:
+      enabled: true
+    totp:
+      enabled: true
+      config:
+        issuer: PicassoFusion
+
+  flows:
+    error:
+      ui_url: http://localhost:3000/auth/error
+
+    settings:
+      ui_url: http://localhost:3000/settings
+      privileged_session_max_age: 15m
+
+    recovery:
+      enabled: true
+      ui_url: http://localhost:3000/recovery
+      use: link
+
+    verification:
+      enabled: true
+      ui_url: http://localhost:3000/verify
+      use: link
+      after:
+        default_browser_return_url: http://localhost:3000/
+
+    logout:
+      after:
+        default_browser_return_url: http://localhost:3000/login
+
+    login:
+      ui_url: http://localhost:3000/login
+      lifespan: 10m
+      after:
+        default_browser_return_url: http://localhost:3000/
+
+    registration:
+      lifespan: 10m
+      ui_url: http://localhost:3000/signup
+      after:
+        default_browser_return_url: http://localhost:3000/onboarding
+        password:
+          hooks:
+            - hook: session # auto-login after registration
+            - hook: web_hooks
+              config:
+                url: http://host.docker.internal:3000/api/auth/hooks/post-registration
+                method: POST
+                auth:
+                  type: api_key
+                  config:
+                    in: header
+                    name: X-Hook-Secret
+                    value: ${KRATOS_HOOK_SECRET}
+
+session:
+  lifespan: 720h # 30 days
+  cookie:
+    name: picasso_session
+    # Use .yourapp.com in production so all subdomains share the session
+    domain: localhost
+    same_site: Lax
+    secure: false # set to true in production (requires HTTPS)
+    persistent: true
+
+identity:
+  default_schema_id: user_v1
+  schemas:
+    - id: user_v1
+      url: file:///etc/config/kratos/identity.schema.v1.json
+
+courier:
+  smtp:
+    # Override via SMTP_HOST, SMTP_USER, SMTP_PASS env vars in production
+    connection_uri: smtp://test:test@mailslurper:1025/?skip_ssl_verify=true
+
+log:
+  level: info
+  format: json
+  leak_sensitive_values: false
+
+secrets:
+  cookie:
+    - ${KRATOS_SECRETS_COOKIE}
+  cipher:
+    - ${KRATOS_SECRETS_CIPHER}
+
+hashers:
+  algorithm: bcrypt
+  bcrypt:
+    cost: 12

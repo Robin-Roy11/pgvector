@@ -1,0 +1,81 @@
+version: v0.40.8
+
+serve:
+  proxy:
+    port: 4455
+    timeout:
+      read: 5s
+      write: 10s
+      idle: 120s
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+        - https://*.yourapp.com
+      allowed_methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+      allowed_headers: [Authorization, Cookie, Content-Type, X-Session-Token]
+
+  api:
+    port: 4456
+
+access_rules:
+  matching_strategy: glob
+  repositories:
+    - file:///etc/config/oathkeeper/access-rules.json
+
+errors:
+  fallback: [json]
+  handlers:
+    json:
+      enabled: true
+      config:
+        verbose: false
+    redirect:
+      enabled: true
+      config:
+        to: http://localhost:3000/login
+
+authenticators:
+  anonymous:
+    enabled: true
+    config:
+      subject: guest
+
+  cookie_session:
+    enabled: true
+    config:
+      check_session_url: http://kratos:4433/sessions/whoami
+      preserve_path: true
+      extra_from: "@this"
+      subject_from: "identity.id"
+      only:
+        - picasso_session
+
+  bearer_token:
+    enabled: true
+    config:
+      check_token_url: http://hydra:4445/admin/oauth2/introspect
+      token_from:
+        header: Authorization
+      prefix: "Bearer "
+
+authorizers:
+  allow:
+    enabled: true
+  deny:
+    enabled: true
+  remote_json:
+    enabled: true
+
+mutators:
+  noop:
+    enabled: true
+  header:
+    enabled: true
+    config:
+      headers:
+        X-User-Id: "{{ print .Subject }}"
+        X-User-Email: "{{ print .Extra.identity.traits.email }}"
+        X-Org-Id: "{{ print .Extra.identity.traits.org_id }}"
+        X-Org-Slug: "{{ print .Extra.identity.traits.org_slug }}"
+        X-User-Role: "{{ print .Extra.identity.traits.role }}"

@@ -1,0 +1,65 @@
+version: v2.3.0
+
+dsn: memory # overridden by DSN env var at runtime
+
+serve:
+  public:
+    base_url: http://localhost:4444/
+    port: 4444
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+        - http://localhost:4455
+        - https://*.yourapp.com
+  admin:
+    base_url: http://hydra:4445/
+    port: 4445
+
+urls:
+  self:
+    issuer: http://localhost:4444/
+  consent: http://localhost:3000/oauth/consent
+  login: http://localhost:3000/login
+  logout: http://localhost:3000/logout
+  error: http://localhost:3000/oauth/error
+
+secrets:
+  system:
+    - ${HYDRA_SECRETS_SYSTEM}
+  cookie:
+    - ${HYDRA_SECRETS_COOKIE}
+
+oidc:
+  subject_identifiers:
+    supported_types: [public, pairwise]
+    pairwise:
+      salt: ${HYDRA_PAIRWISE_SALT}
+
+  dynamic_client_registration:
+    enabled: false # Never enable without authentication in production
+
+  discovery:
+    supported_claims:
+      - email
+      - email_verified
+      - name
+      - org_id
+      - org_slug
+      - role
+
+ttl:
+  login_consent_request: 30m
+  access_token: 1h
+  refresh_token: 720h # 30 days
+  id_token: 1h
+  auth_code: 10m
+
+oauth2:
+  pkce:
+    enforced: true
+    enforced_for_public_clients: true
+
+log:
+  level: info
+  format: json

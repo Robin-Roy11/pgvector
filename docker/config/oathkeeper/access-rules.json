@@ -1,0 +1,94 @@
+[
+  {
+    "id": "public-static-assets",
+    "match": {
+      "url": "http://localhost:4455/<{_next/static,_next/image,favicon.ico,robots.txt,sitemap.xml}**>",
+      "methods": ["GET", "HEAD"]
+    },
+    "authenticators": [{ "handler": "anonymous" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "noop" }]
+  },
+  {
+    "id": "public-auth-pages",
+    "match": {
+      "url": "http://localhost:4455/<{login,signup,recovery,verify,oauth}**>",
+      "methods": ["GET", "POST", "PUT", "DELETE"]
+    },
+    "authenticators": [{ "handler": "anonymous" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "noop" }]
+  },
+  {
+    "id": "public-auth-api-hooks",
+    "match": {
+      "url": "http://localhost:4455/api/auth/<**>",
+      "methods": ["POST"]
+    },
+    "authenticators": [{ "handler": "anonymous" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "noop" }]
+  },
+  {
+    "id": "authenticated-search-api",
+    "match": {
+      "url": "http://localhost:4455/api/search<**>",
+      "methods": ["GET"]
+    },
+    "authenticators": [
+      { "handler": "cookie_session" },
+      { "handler": "anonymous" }
+    ],
+    "authorizer": { "handler": "allow" },
+    "mutators": [
+      {
+        "handler": "header",
+        "config": {
+          "headers": {
+            "X-User-Id": "{{ print .Subject }}",
+            "X-Org-Id": "{{ print .Extra.identity.traits.org_id }}",
+            "X-Org-Slug": "{{ print .Extra.identity.traits.org_slug }}",
+            "X-User-Role": "{{ print .Extra.identity.traits.role }}"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "admin-only-routes",
+    "match": {
+      "url": "http://localhost:4455/<{api/seed,api/setup,api/admin}**>",
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    },
+    "authenticators": [
+      { "handler": "cookie_session" },
+      { "handler": "bearer_token" }
+    ],
+    "authorizer": {
+      "handler": "remote_json",
+      "config": {
+        "remote": "http://keto:4466/relation-tuples/check/openapi",
+        "payload": "{\"namespace\":\"Organization\",\"object\":\"{{ print .Extra.identity.traits.org_id }}\",\"relation\":\"manage\",\"subject_id\":\"{{ print .Subject }}\"}"
+      }
+    },
+    "mutators": [{ "handler": "header" }]
+  },
+  {
+    "id": "authenticated-app-catch-all",
+    "match": {
+      "url": "http://localhost:4455/<**>",
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    },
+    "authenticators": [{ "handler": "cookie_session" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "header" }],
+    "errors": [
+      {
+        "handler": "redirect",
+        "config": {
+          "to": "http://localhost:3000/login"
+        }
+      }
+    ]
+  }
+]
