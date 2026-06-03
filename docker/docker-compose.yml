@@ -1,0 +1,150 @@
+version: "3.8"
+
+networks:
+  ory:
+    driver: bridge
+
+volumes:
+  pg_ory_data:
+
+services:
+  # ── ORY PostgreSQL (separate from Neon product DB) ──────────────────────────
+  postgres-ory:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [ory]
+    environment:
+      POSTGRES_USER: ory
+      POSTGRES_PASSWORD: ${ORY_POSTGRES_PASSWORD}
+      POSTGRES_DB: ory
+    volumes:
+      - pg_ory_data:/var/lib/postgresql/data
+      - ./init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Kratos migrations (runs once then exits) ─────────────────────────────────
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    networks: [ory]
+    depends_on:
+      postgres-ory:
+        condition: service_healthy
+    command: migrate sql -e --yes
+    environment:
+      DSN: postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_kratos?sslmode=disable
+    restart: on-failure
+
+  # ── Kratos ──────────────────────────────────────────────────────────────────
+  kratos:
+    image: oryd/kratos:v1.3.1
+    restart: unless-stopped
+    networks: [ory]
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4433:4433" # public API (browser self-service flows)
+      - "4434:4434" # admin API — never expose publicly
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    volumes:
+      - ./config/kratos:/etc/config/kratos
+    environment:
+      DSN: postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_kratos?sslmode=disable
+      LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4434/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Keto migrations ──────────────────────────────────────────────────────────
+  keto-migrate:
+    image: oryd/keto:v0.13.0
+    networks: [ory]
+    depends_on:
+      postgres-ory:
+        condition: service_healthy
+    command: migrate up -y
+    environment:
+      DSN: postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_keto?sslmode=disable
+    restart: on-failure
+
+  # ── Keto ────────────────────────────────────────────────────────────────────
+  keto:
+    image: oryd/keto:v0.13.0
+    restart: unless-stopped
+    networks: [ory]
+    depends_on:
+      keto-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4466:4466" # read API
+      - "4467:4467" # write API — never expose publicly
+    command: serve -c /etc/config/keto/keto.yml
+    volumes:
+      - ./config/keto:/etc/config/keto
+    environment:
+      DSN: postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_keto?sslmode=disable
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4466/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Hydra migrations ─────────────────────────────────────────────────────────
+  hydra-migrate:
+    image: oryd/hydra:v2.3.0
+    networks: [ory]
+    depends_on:
+      postgres-ory:
+        condition: service_healthy
+    command: migrate sql --yes postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_hydra?sslmode=disable
+    restart: on-failure
+
+  # ── Hydra ────────────────────────────────────────────────────────────────────
+  hydra:
+    image: oryd/hydra:v2.3.0
+    restart: unless-stopped
+    networks: [ory]
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4444:4444" # public API (OAuth2 endpoints)
+      - "4445:4445" # admin API — never expose publicly
+    command: serve all -c /etc/config/hydra/hydra.yml
+    volumes:
+      - ./config/hydra:/etc/config/hydra
+    environment:
+      DSN: postgres://ory:${ORY_POSTGRES_PASSWORD}@postgres-ory:5432/ory_hydra?sslmode=disable
+      SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM}
+      SECRETS_COOKIE: ${HYDRA_SECRETS_COOKIE}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4444/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Oathkeeper ───────────────────────────────────────────────────────────────
+  oathkeeper:
+    image: oryd/oathkeeper:v0.40.8
+    restart: unless-stopped
+    networks: [ory]
+    depends_on:
+      kratos:
+        condition: service_healthy
+    ports:
+      - "4455:4455" # proxy — public-facing, sits in front of Next.js
+      - "4456:4456" # api (rules management) — never expose publicly
+    command: serve -c /etc/config/oathkeeper/oathkeeper.yml
+    volumes:
+      - ./config/oathkeeper:/etc/config/oathkeeper
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4456/health/alive"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
